@@ -32,8 +32,8 @@ for c in dc:
 with open("/nfs/kshedden/Daniel_Keyes/counts.json.gz") as fid:
     hi = pd.read_csv("/nfs/kshedden/Daniel_Keyes/hospital_info.csv")
 
-hg1 = [x for x,y in zip(hi.LOCATIONID, hi.RUCC) if y <= 2]
-hg2 = [x for x,y in zip(hi.LOCATIONID, hi.RUCC) if y > 2]
+hg1 = [x for x,y in zip(hi.LOCATIONID, hi.RUCC) if y <= 2 and x in dc.keys()]
+hg2 = [x for x,y in zip(hi.LOCATIONID, hi.RUCC) if y > 2 and x in dc.keys()]
 hg2.remove("OWOSSO")
 hg0 = hg1 + hg2
 
@@ -51,7 +51,8 @@ px = list(set(px))
 px.sort()
 
 plt.clf()
-plt.axes([0.1, 0.1, 0.7, 0.8])
+plt.figure(figsize=(8, 5))
+plt.axes([0.1, 0.1, 0.64, 0.8])
 plt.grid(True)
 
 for jh, hg in enumerate([hg0, hg1, hg2]):
@@ -93,7 +94,7 @@ for jh, hg in enumerate([hg0, hg1, hg2]):
     r = du.loc[ii, :]
     out.write("%-10s   %10s   %10.2f\n" % (subsets[jh], r.Date.isoformat()[0:10], r.Ratio))
 
-    lab = ["Rural + Urban", "Urban", "Rural"][jh]
+    lab = ["All EDs (%d)" % len(hg0), "Urban EDs (%d)" % len(hg1), "Non-urban EDs (%d)" % len(hg2)][jh]
     plt.plot(du.Date, du.Ratio, label=lab)
 
 ha, lb = plt.gca().get_legend_handles_labels()

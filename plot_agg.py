@@ -24,7 +24,6 @@ hg0 = hg1 + hg2
 
 outname = "volume_agg.pdf"
 pdf = PdfPages("volume_agg.pdf")
-out = open(outname.replace(".pdf", ".txt"), "w")
 
 px = []
 for ky in dc.keys():
@@ -35,6 +34,8 @@ px.sort()
 col = {"Trauma": "blue", "Total": "black", "Pediatric": "orange", "Flu": "red"}
 
 tr = {"Trauma": "Trauma", "Total": "Total", "Pediatric": "Pediatric", "Flu": "Covid-like"}
+
+xsum = []
 
 for jh, hg in enumerate([hg0, hg1, hg2]):
     for smooth in False, True:
@@ -72,12 +73,19 @@ for jh, hg in enumerate([hg0, hg1, hg2]):
                 y = np.convolve(y, np.ones(7), mode='same')
                 y /= oo
 
-                out.write("%s %f\n" % (cx, y.max()))
-
             du = pd.DataFrame({"Count": y})
             du.loc[:, "Date"] = pd.to_datetime("2019-01-01") + pd.to_timedelta(np.arange(mxt), 'd')
-
             du = du.loc[du.Date <= pd.to_datetime("2020-06-01")]
+
+            if smooth:
+                dz = du.copy()
+                dz.loc[dz.Date < pd.to_datetime("2020-03-11"), "Count"] = np.Inf
+                i0 = dz.Count.idxmin()
+                dz.loc[dz.Date < pd.to_datetime("2020-03-11"), "Count"] = -np.Inf
+                i1 = dz.Count.idxmax()
+                row = [cx, dz.loc[i0, "Date"], dz.loc[i0, "Count"], dz.loc[i1, "Date"], dz.loc[i1, "Count"]]
+                xsum.append(row)
+
             plt.plot(du.Date, du.Count, label=tr[cx], color=col[cx], alpha=0.6)
 
         ha, lb = plt.gca().get_legend_handles_labels()
@@ -98,4 +106,7 @@ for jh, hg in enumerate([hg0, hg1, hg2]):
         pdf.savefig()
 
 pdf.close()
-out.close()
+
+xsum = pd.DataFrame(xsum)
+xsum.columns = ["Subgroup", "Nadir_date", "Nadir", "Peak_date", "Peak"]
+xsum.to_csv(outname.replace(".pdf", ".txt"), index=None)

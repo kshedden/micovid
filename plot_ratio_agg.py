@@ -59,7 +59,7 @@ sumx = []
 for jh, hg in enumerate([hg0, hg1, hg2]):
 
     plt.clf()
-    plt.axes([0.1, 0.1, 0.69, 0.8])
+    plt.axes([0.1, 0.1, 0.7, 0.8])
     plt.grid(True)
 
     plt.axvline(pd.to_datetime("2020-03-11"), color="grey", ls="--")
