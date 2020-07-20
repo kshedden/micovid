@@ -41,8 +41,9 @@ subsets = ["All", "Urban", "NonUrban"]
 
 outname = "admit_ratios_agg.pdf"
 
-out = open(outname.replace(".pdf", ".txt"), "w")
 pdf = PdfPages(outname)
+
+sumx = []
 
 px = []
 for ky in dm.keys():
@@ -50,14 +51,16 @@ for ky in dm.keys():
 px = list(set(px))
 px.sort()
 
-plt.clf()
-plt.figure(figsize=(8, 5))
-plt.axes([0.1, 0.1, 0.64, 0.8])
-plt.grid(True)
 
 for jh, hg in enumerate([hg0, hg1, hg2]):
 
-    y = np.zeros((mxt+1, 2))
+    plt.clf()
+    plt.figure(figsize=(8, 5))
+    plt.axes([0.1, 0.1, 0.64, 0.8])
+    plt.grid(True)
+
+    y = np.zeros((mxt+1, 3))
+    moulton = []
     for loc in hg:
         for sex in "Female", "Male":
             wk = "%s:%s" % (loc, sex)
@@ -75,36 +78,44 @@ for jh, hg in enumerate([hg0, hg1, hg2]):
                 continue
             du2 = dm[ky2]
 
-            du1 = np.asarray(du1).T
-            du2 = np.asarray(du2).T
+            assert(np.all(du1[0] == du2[0]))
 
-            assert(np.all(du1[:, 0] == du2[:, 0]))
-
-            day = np.asarray(du1[:, 0]).astype(np.int) - 1
-            rat = np.exp(du1[:, 1] - du2[:, 1])
+            day = np.asarray(du1[0]).astype(np.int) - 1
+            rat = np.asarray(du1[1]) - np.asarray(du2[1])
+            rat_se = np.sqrt(np.asarray(du1[2])**2 + np.asarray(du2[2])**2)
             y[day, 0] += w*rat
             y[day, 1] += w
+            y[day, 2] += (w * rat_se)**2
+            cc = (du1[3][0] + du2[3][0]) / 2
+            moulton.append(np.sqrt(1 + len(day)*np.clip(cc, 0, np.inf)))
+            print(np.median(moulton))
 
     y[:, 0] /= y[:, 1]
-    du = pd.DataFrame({"Ratio": y[:, 0]})
+    y[:, 2] /= y[:, 1]**2
+    y[:, 2] = np.sqrt(y[:, 2]) * np.median(moulton)
+    du = pd.DataFrame({"Ratio": y[:, 0], "RatioSE": y[:, 2]})
     du.loc[:, "Date"] = pd.to_datetime("2020-01-01") + pd.to_timedelta(np.arange(mxt+1), 'd')
     du = du.loc[du.Date < pd.to_datetime("2020-06-01"), :]
 
     ii = du.Ratio.idxmax()
     r = du.loc[ii, :]
-    out.write("%-10s   %10s   %10.2f\n" % (subsets[jh], r.Date.isoformat()[0:10], r.Ratio))
+    sumrow = [subsets[jh], r.Date.isoformat()[0:10],
+              np.exp(r.Ratio), np.exp(r.Ratio - 2*r.RatioSE), np.exp(r.Ratio + 2*r.RatioSE)]
+    sumx.append(sumrow)
 
     lab = ["All EDs (%d)" % len(hg0), "Urban EDs (%d)" % len(hg1), "Non-urban EDs (%d)" % len(hg2)][jh]
-    plt.plot(du.Date, du.Ratio, label=lab)
+    plt.title(lab)
 
-ha, lb = plt.gca().get_legend_handles_labels()
-leg = plt.figlegend(ha, lb, "center right")
-leg.draw_frame(False)
-plt.gca().xaxis.set_major_locator(months)
-plt.gca().xaxis.set_major_formatter(months_fmt)
-plt.xlabel("Date (2020)", size=14)
-plt.ylabel("Admission rate relative to 2019", size=14)
-pdf.savefig()
+    plt.plot(du.Date, np.exp(du.Ratio))
+
+    plt.gca().xaxis.set_major_locator(months)
+    plt.gca().xaxis.set_major_formatter(months_fmt)
+    plt.xlabel("Date (2020)", size=14)
+    plt.ylabel("Admission rate relative to 2019", size=14)
+    pdf.savefig()
 
 pdf.close()
-out.close()
+
+sumx = pd.DataFrame(sumx)
+sumx.columns = ["Location", "Peak_date", "Peak_ratio", "Peak_ratio_lcb", "Peak_ratio_ucb"]
+sumx.to_csv(outname.replace(".pdf", ".txt"), index=None, float_format="%.4f")

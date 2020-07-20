@@ -15,6 +15,7 @@ import (
 	"github.com/kshedden/statmodel/statmodel"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/optimize"
+	"gonum.org/v1/gonum/stat"
 )
 
 var (
@@ -89,28 +90,32 @@ func regress(loc, sex, vname string, fx selector) {
 	}
 
 	dm := make(map[int]int)
-	ii := -9
+	jan1_2020 := -9
 	for i, d := range dt {
 		c := 1000*d.Year() + d.YearDay()
 		dm[c] = i
 		if d.Year() == 2020 && d.Month() == 1 && d.Day() == 1 {
-			ii = i
+			jan1_2020 = i
 		}
 	}
-	if ii == -9 {
+	if jan1_2020 == -9 {
 		panic("!!")
 	}
 
 	var z, x, d []float64
-	for i := ii; i < len(y); i++ {
+	for i := jan1_2020; i < len(y); i++ {
 		if !dt[i].IsZero() {
+
+			// Find the same day of the previous year
 			jj, ok := dm[1000*2019+dt[i].YearDay()]
 			if !ok {
 				panic("!!")
 			}
+
 			z = append(z, float64(y[i]))
 			d = append(d, float64(dt[i].YearDay()))
 
+			// Get the average case load for one year ago
 			xx := 0.0
 			for k := 0; k < 7; k++ {
 				xx += float64(y[jj+k])
@@ -122,6 +127,7 @@ func regress(loc, sex, vname string, fx selector) {
 	}
 
 	if floats.Sum(z) < 100 {
+		fmt.Printf("Skipping %s %s %s due to small sample size (%.0f)\n", loc, sex, vname, floats.Sum(z))
 		return
 	}
 
@@ -136,7 +142,7 @@ func regress(loc, sex, vname string, fx selector) {
 		xnames = append(xnames, fmt.Sprintf("d%d", j))
 	}
 
-	df := statmodel.NewDataset(da, varnames, "y", xnames)
+	df := statmodel.NewDataset(da, varnames)
 	config := glm.DefaultConfig()
 	config.Family = glm.NewFamily(glm.PoissonFamily)
 	config.OffsetVar = "x"
@@ -148,19 +154,35 @@ func regress(loc, sex, vname string, fx selector) {
 	}
 	config.L2Penalty = l2p
 
-	model := glm.NewGLM(df, config)
+	model, err := glm.NewGLM(df, "y", xnames, config)
+	if err != nil {
+		panic(err)
+	}
 	model = model.OptSettings(&optimize.Settings{GradientThreshold: 1e-4})
 	result := model.Fit()
 
+	pr := result.PearsonResid(nil)
+	cc := stat.Correlation(pr[0:len(pr)-1], pr[1:], nil)
+	fmt.Printf("Autocorrelation of Pearson residuals: %v\n", cc)
+
 	ky := fmt.Sprintf("%s:%s:%s", loc, sex, vname)
 	cf := result.Params()
+	p := len(cf)
+	vc := result.VCov()
 	f := make([]float64, len(d))
+	se := make([]float64, len(d))
 	for i := range d {
-		for j := range cf {
-			f[i] += cf[j] * bx[j][i]
+		for j1 := range cf {
+			f[i] += cf[j1] * bx[j1][i]
+			for j2 := range cf {
+				se[i] += bx[j1][i] * bx[j2][i] * vc[j1*p+j2]
+			}
 		}
 	}
-	results[ky] = [][]float64{d, f}
+	for i := range se {
+		se[i] = math.Sqrt(se[i])
+	}
+	results[ky] = [][]float64{d, f, se, []float64{cc}}
 
 	fmt.Printf("Location=%v sex=%v\n", loc, sex)
 	fmt.Printf("%+v\n", result.Summary())

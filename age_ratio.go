@@ -15,6 +15,7 @@ import (
 	"github.com/kshedden/statmodel/statmodel"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/optimize"
+	"gonum.org/v1/gonum/stat"
 )
 
 var (
@@ -77,8 +78,16 @@ func regress(loc, sex string, age0, age1 int) {
 
 	var ya [][100]int
 	var dt []time.Time
-	ya = locx[loc].Female.Age
-	dt = locx[loc].Female.Datex
+	switch sex {
+	case "Female":
+		ya = locx[loc].Female.Age
+		dt = locx[loc].Female.Datex
+	case "Male":
+		ya = locx[loc].Male.Age
+		dt = locx[loc].Male.Datex
+	default:
+		panic("")
+	}
 
 	y := make([]int, len(ya))
 	for i := range ya {
@@ -121,6 +130,7 @@ func regress(loc, sex string, age0, age1 int) {
 	}
 
 	if floats.Sum(z) < 100 {
+		fmt.Printf("Skipping %s %s %d-%d due to small sample size (%.0f)\n", loc, sex, age0, age1, floats.Sum(z))
 		return
 	}
 
@@ -135,7 +145,7 @@ func regress(loc, sex string, age0, age1 int) {
 		xnames = append(xnames, fmt.Sprintf("d%d", j))
 	}
 
-	df := statmodel.NewDataset(da, varnames, "y", xnames)
+	df := statmodel.NewDataset(da, varnames)
 	config := glm.DefaultConfig()
 	config.Family = glm.NewFamily(glm.PoissonFamily)
 	config.OffsetVar = "x"
@@ -147,19 +157,36 @@ func regress(loc, sex string, age0, age1 int) {
 	}
 	config.L2Penalty = l2p
 
-	model := glm.NewGLM(df, config)
+	model, err := glm.NewGLM(df, "y", xnames, config)
+	if err != nil {
+		panic(err)
+	}
 	model = model.OptSettings(&optimize.Settings{GradientThreshold: 1e-4})
 	result := model.Fit()
 
 	ky := fmt.Sprintf("%s:%s:%d_%d", loc, sex, age0, age1)
 	cf := result.Params()
+	p := len(cf)
+	vc := result.VCov()
 	f := make([]float64, len(d))
+	se := make([]float64, len(d))
 	for i := range d {
-		for j := range cf {
-			f[i] += cf[j] * bx[j][i]
+		for j1 := range cf {
+			f[i] += cf[j1] * bx[j1][i]
+			for j2 := range cf {
+				se[i] += bx[j1][i] * bx[j2][i] * vc[j1*p+j2]
+			}
 		}
 	}
-	results[ky] = [][]float64{d, f}
+	for i := range se {
+		se[i] = math.Sqrt(se[i])
+	}
+
+	pr := result.PearsonResid(nil)
+	cc := stat.Correlation(pr[0:len(pr)-1], pr[1:], nil)
+	fmt.Printf("Autocorrelation of Pearson residuals: %v\n", cc)
+
+	results[ky] = [][]float64{d, f, se, []float64{cc}}
 
 	fmt.Printf("Location=%v sex=%v\n", loc, sex)
 	fmt.Printf("%+v\n", result.Summary())

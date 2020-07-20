@@ -32,10 +32,11 @@ px = list(set(px))
 px.sort()
 
 col = {"Trauma": "blue", "Total": "black", "Pediatric": "orange", "Flu": "red"}
-
+subsets = ["All", "Urban", "NonUrban"]
 tr = {"Trauma": "Trauma", "Total": "Total", "Pediatric": "Pediatric", "Flu": "Covid-like"}
 
 xsum = []
+cps = []
 
 for jh, hg in enumerate([hg0, hg1, hg2]):
     for smooth in False, True:
@@ -86,6 +87,10 @@ for jh, hg in enumerate([hg0, hg1, hg2]):
                 row = [cx, dz.loc[i0, "Date"], dz.loc[i0, "Count"], dz.loc[i1, "Date"], dz.loc[i1, "Count"]]
                 xsum.append(row)
 
+                du["Subgroup"] = cx
+                du["Location"] = subsets[jh]
+                cps.append(du)
+
             plt.plot(du.Date, du.Count, label=tr[cx], color=col[cx], alpha=0.6)
 
         ha, lb = plt.gca().get_legend_handles_labels()
@@ -110,3 +115,6 @@ pdf.close()
 xsum = pd.DataFrame(xsum)
 xsum.columns = ["Subgroup", "Nadir_date", "Nadir", "Peak_date", "Peak"]
 xsum.to_csv(outname.replace(".pdf", ".txt"), index=None)
+
+cps = pd.concat(cps, axis=0)
+cps.to_csv("plot_data/volume_agg.csv", float_format="%.5f", index=None)
